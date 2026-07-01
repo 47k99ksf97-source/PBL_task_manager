@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Task Journal">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="theme-color" content="#0f766e">
+    <title>Goal Task Journal</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icon.svg">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Goal Task Journal</p>
+          <h1>目標と今日のタスク</h1>
+        </div>
+        <div class="date-box">
+          <label for="entryDate">日付</label>
+          <input id="entryDate" type="date">
+        </div>
+      </header>
+
+      <nav class="view-switch" aria-label="ページ切り替え">
+        <button id="todayViewButton" type="button" class="view-button active" data-view="today">今日の入力</button>
+        <button id="recordsViewButton" type="button" class="view-button" data-view="records">記録一覧</button>
+      </nav>
+
+      <div id="todayView" class="app-view active">
+        <section class="goal-panel" aria-labelledby="goalTitle">
+          <div class="section-head">
+            <h2 id="goalTitle">直近の目標・提出課題</h2>
+            <span id="goalStatus" class="status-pill">未設定</span>
+          </div>
+          <form id="goalForm" class="goal-form">
+            <div class="field title-field">
+              <label for="goalInput">目標・課題</label>
+              <input id="goalInput" type="text" placeholder="例: 英語レポートを提出する" required>
+            </div>
+            <div class="field compact">
+              <label for="goalDeadline">期限</label>
+              <input id="goalDeadline" type="date" required>
+            </div>
+            <button type="submit" class="primary">登録</button>
+          </form>
+          <ul id="goalList" class="goal-list"></ul>
+        </section>
+
+        <section class="ai-panel" aria-labelledby="aiTitle">
+          <div class="section-head">
+            <div>
+              <h2 id="aiTitle">AIアシスト</h2>
+              <p class="panel-note">目標と履歴から今日のタスク案を作ります。</p>
+            </div>
+            <button id="suggestTasks" class="primary" type="button">タスク提案</button>
+          </div>
+          <div class="ai-actions">
+            <button id="suggestWeight" class="ghost" type="button">入力中タスクの重みを提案</button>
+            <span id="aiStatus" class="ai-status" role="status"></span>
+          </div>
+          <div id="aiSuggestions" class="ai-suggestions"></div>
+        </section>
+
+        <section class="workbench" aria-label="今日のタスク管理">
+          <form id="taskForm" class="task-form">
+            <div class="field title-field">
+              <label for="taskTitle">タスク</label>
+              <input id="taskTitle" type="text" placeholder="今日やること" required>
+            </div>
+            <div class="field compact">
+              <label for="taskWeight">重要度</label>
+              <input id="taskWeight" type="number" min="1" max="5" inputmode="numeric" value="3">
+            </div>
+            <label class="check-row">
+              <input id="taskMinimum" type="checkbox" checked>
+              <span>必要最低限</span>
+            </label>
+            <button type="submit" class="primary">追加</button>
+          </form>
+
+          <div class="summary-grid">
+            <div>
+              <span class="metric-label">達成率</span>
+              <strong id="completionRate">0%</strong>
+            </div>
+            <div>
+              <span class="metric-label">獲得重み</span>
+              <strong id="weightScore">0 / 0</strong>
+            </div>
+            <div>
+              <span class="metric-label">評価候補</span>
+              <strong id="suggestedGrade">F</strong>
+            </div>
+            <div>
+              <span class="metric-label">作業時間</span>
+              <strong id="workTime">0分</strong>
+            </div>
+          </div>
+
+          <div class="task-columns">
+            <section aria-labelledby="minimumTitle">
+              <div class="section-head small">
+                <h2 id="minimumTitle">必要最低限</h2>
+                <span id="minimumCount" class="count">0</span>
+              </div>
+              <ul id="minimumTasks" class="task-list"></ul>
+            </section>
+            <section aria-labelledby="extraTitle">
+              <div class="section-head small">
+                <h2 id="extraTitle">プラスアルファ</h2>
+                <span id="extraCount" class="count">0</span>
+              </div>
+              <ul id="extraTasks" class="task-list"></ul>
+            </section>
+          </div>
+        </section>
+
+        <section class="health-panel" aria-labelledby="healthTitle">
+          <div class="section-head">
+            <div>
+              <h2 id="healthTitle">ヘルスケア情報</h2>
+              <p class="panel-note">iPhoneのヘルスケアから書き出したexport.xmlを読み込みます。</p>
+            </div>
+            <label class="file-button">
+              <input id="healthFile" type="file" accept=".xml,text/xml,application/xml">
+              読み込む
+            </label>
+          </div>
+          <div id="healthSummary" class="health-summary"></div>
+          <div class="inline-chart-box">
+            <canvas id="healthTodayChart" width="640" height="240" aria-label="ヘルスケア情報のグラフ"></canvas>
+          </div>
+          <span id="healthStatus" class="ai-status" role="status"></span>
+        </section>
+
+        <section class="screen-panel" aria-labelledby="screenTitle">
+          <div class="section-head">
+            <div>
+              <h2 id="screenTitle">スクリーンタイム</h2>
+              <p class="panel-note">CSVまたはスクリーンタイムのスクショを読み込みます。</p>
+            </div>
+            <div class="file-actions">
+              <label class="file-button">
+                <input id="screenFile" type="file" accept=".csv,text/csv">
+                CSV
+              </label>
+              <label class="file-button ghost-file">
+                <input id="screenShotFile" type="file" accept="image/png,image/jpeg,image/jpg" multiple>
+                スクショ
+              </label>
+            </div>
+          </div>
+          <div id="screenSummary" class="health-summary"></div>
+          <div class="inline-chart-grid">
+            <div class="inline-chart-box">
+              <h3>カテゴリ</h3>
+              <canvas id="screenCategoryChart" width="640" height="240" aria-label="スクリーンタイムカテゴリのグラフ"></canvas>
+            </div>
+            <div class="inline-chart-box">
+              <h3>アプリ</h3>
+              <canvas id="screenAppChart" width="640" height="240" aria-label="スクリーンタイムアプリ別のグラフ"></canvas>
+            </div>
+          </div>
+          <span id="screenStatus" class="ai-status" role="status"></span>
+        </section>
+
+        <section class="review-panel" aria-labelledby="reviewTitle">
+          <div class="section-head">
+            <h2 id="reviewTitle">今日の評価</h2>
+            <button id="saveEntry" class="primary" type="button">記録</button>
+          </div>
+          <div id="gradeButtons" class="grade-buttons" role="radiogroup" aria-label="評価">
+            <button type="button" data-grade="S" class="grade active" aria-checked="true">S</button>
+            <button type="button" data-grade="A" class="grade" aria-checked="false">A</button>
+            <button type="button" data-grade="B" class="grade" aria-checked="false">B</button>
+            <button type="button" data-grade="C" class="grade" aria-checked="false">C</button>
+            <button type="button" data-grade="F" class="grade" aria-checked="false">F</button>
+          </div>
+          <div class="review-actions">
+            <button id="evaluateDay" class="ghost" type="button">AIで今日を評価</button>
+            <span id="aiGradeStatus" class="ai-status" role="status"></span>
+          </div>
+          <div id="aiGradeResult" class="ai-grade-result" hidden></div>
+          <div class="entry-details">
+            <div class="field">
+              <label for="entryPlace">場所</label>
+              <input id="entryPlace" type="text" placeholder="例: 自宅、図書館、カフェ">
+            </div>
+            <div class="field">
+              <label for="entryContext">状況メモ</label>
+              <input id="entryContext" type="text" placeholder="例: 眠め、集中できた、移動中">
+            </div>
+          </div>
+          <textarea id="reflection" rows="3" placeholder="今日の振り返り"></textarea>
+        </section>
+      </div>
+
+      <div id="recordsView" class="app-view">
+        <section class="charts-panel" aria-labelledby="chartsTitle">
+          <div class="section-head">
+            <h2 id="chartsTitle">行動グラフ</h2>
+          </div>
+          <div class="charts-grid">
+            <div class="chart-box">
+              <h3>歩数</h3>
+              <canvas id="stepsChart" width="520" height="220"></canvas>
+            </div>
+            <div class="chart-box">
+              <h3>睡眠</h3>
+              <canvas id="sleepChart" width="520" height="220"></canvas>
+            </div>
+            <div class="chart-box">
+              <h3>ワークアウト</h3>
+              <canvas id="workoutChart" width="520" height="220"></canvas>
+            </div>
+            <div class="chart-box">
+              <h3>スクリーンタイム</h3>
+              <canvas id="screenChart" width="520" height="220"></canvas>
+            </div>
+          </div>
+        </section>
+        <section class="history-panel" aria-labelledby="historyTitle">
+          <div class="section-head">
+            <h2 id="historyTitle">記録</h2>
+            <button id="clearAll" type="button" class="ghost">全削除</button>
+          </div>
+          <div id="historyList" class="history-list"></div>
+        </section>
+      </div>
+    </main>
+
+    <template id="taskTemplate">
+      <li class="task-item">
+        <label class="task-check">
+          <input type="checkbox">
+          <span class="task-name"></span>
+        </label>
+        <span class="weight-badge"></span>
+        <div class="task-timer">
+          <span class="timer-time">0:00</span>
+          <button type="button" class="timer-button">開始</button>
+        </div>
+        <button type="button" class="icon-button" aria-label="削除">×</button>
+      </li>
+    </template>
+
+    <script src="cloud-config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
