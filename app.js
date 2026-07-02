@@ -1068,6 +1068,50 @@ function parseAppleHealthXmlByDate(xmlText) {
   return byDate;
 }
 
+function normalizeShortcutHealthItem(item, fallbackDate = "") {
+  const date = String(item.date || item.sourceDate || item["日付"] || fallbackDate || todayString).slice(0, 10);
+  if (!date) throw new Error("ショートカットJSONに日付がありません。");
+  return {
+    importedAt: new Date().toISOString(),
+    sourceDate: date,
+    steps: Math.round(Number(item.steps ?? item.stepCount ?? item["歩数"] ?? 0) || 0),
+    sleepMinutes: Math.round(Number(item.sleepMinutes ?? item.sleep ?? item["睡眠分"] ?? item["睡眠"] ?? 0) || 0),
+    workoutMinutes: Math.round(Number(item.workoutMinutes ?? item.exerciseMinutes ?? item["運動分"] ?? item["運動"] ?? 0) || 0),
+    activeEnergy: Math.round(Number(item.activeEnergy ?? item.calories ?? item["消費カロリー"] ?? item["アクティブエネルギー"] ?? 0) || 0),
+    walkingDistance: Number(item.walkingDistance ?? item.distance ?? item["歩行距離"] ?? 0) || 0,
+  };
+}
+
+function parseShortcutHealthJson(jsonText, fallbackDate = els.entryDate.value) {
+  const parsed = JSON.parse(jsonText);
+  const rows = Array.isArray(parsed) ? parsed : Array.isArray(parsed.days) ? parsed.days : [parsed];
+  const byDate = {};
+
+  rows.forEach((row) => {
+    const health = normalizeShortcutHealthItem(row, parsed.date || fallbackDate);
+    byDate[health.sourceDate] = {
+      ...(byDate[health.sourceDate] || {}),
+      ...health,
+      steps: (byDate[health.sourceDate]?.steps || 0) + health.steps,
+      sleepMinutes: (byDate[health.sourceDate]?.sleepMinutes || 0) + health.sleepMinutes,
+      workoutMinutes: (byDate[health.sourceDate]?.workoutMinutes || 0) + health.workoutMinutes,
+      activeEnergy: (byDate[health.sourceDate]?.activeEnergy || 0) + health.activeEnergy,
+      walkingDistance: (byDate[health.sourceDate]?.walkingDistance || 0) + health.walkingDistance,
+    };
+  });
+
+  return byDate;
+}
+
+function parseHealthFile(text, file) {
+  const name = String(file?.name || "").toLowerCase();
+  const trimmed = text.trim();
+  if (name.endsWith(".json") || trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return parseShortcutHealthJson(trimmed);
+  }
+  return parseAppleHealthXmlByDate(text);
+}
+
 function parseCsv(text) {
   const rows = [];
   let row = [];
@@ -1379,7 +1423,7 @@ els.healthFile.addEventListener("change", async () => {
   els.healthStatus.style.color = "";
   try {
     const text = await file.text();
-    const healthByDate = parseAppleHealthXmlByDate(text);
+    const healthByDate = parseHealthFile(text, file);
     state.healthByDate = { ...(state.healthByDate || {}), ...healthByDate };
     render();
     els.healthStatus.textContent = `${Object.keys(healthByDate).length}日分のヘルスケア情報を読み込みました。`;
