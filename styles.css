@@ -227,6 +227,22 @@ textarea:focus {
   padding: 0;
 }
 
+.cle-import {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 360px) auto auto auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  margin: 12px 0;
+  padding: 12px;
+}
+
+.cle-import h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
 .goal-list:empty::before {
   content: "登録中の目標はありません";
   display: grid;
@@ -794,7 +810,8 @@ textarea:focus {
   }
 
   .sync-panel,
-  .sync-login {
+  .sync-login,
+  .cle-import {
     grid-template-columns: 1fr;
   }
 

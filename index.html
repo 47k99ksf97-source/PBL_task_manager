@@ -48,6 +48,20 @@
             </div>
             <button type="submit" class="primary">登録</button>
           </form>
+          <div class="cle-import">
+            <div>
+              <h3>CLE課題インポート</h3>
+              <p class="panel-note">カレンダー共有リンクを保存すると、ボタン1つで課題期限を更新できます。</p>
+            </div>
+            <input id="cleCalendarUrl" type="url" placeholder="CLEのカレンダー共有リンク">
+            <button id="cleFetch" type="button" class="primary">更新</button>
+            <label class="file-button ghost-file">
+              <input id="cleFile" type="file" accept=".ics,text/calendar,.csv,text/csv,.json,application/json,.txt,text/plain">
+              ファイル
+            </label>
+            <button id="clePaste" type="button" class="ghost">貼り付け</button>
+            <span id="cleStatus" class="ai-status" role="status"></span>
+          </div>
           <ul id="goalList" class="goal-list"></ul>
         </section>
 

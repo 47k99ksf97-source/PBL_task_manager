@@ -16,6 +16,7 @@ const initialState = {
   goals: [],
   entries: {},
   healthByDate: {},
+  cleCalendarUrl: "",
 };
 
 const today = new Date();
@@ -38,6 +39,11 @@ const els = {
   goalDeadline: document.querySelector("#goalDeadline"),
   goalList: document.querySelector("#goalList"),
   goalStatus: document.querySelector("#goalStatus"),
+  cleCalendarUrl: document.querySelector("#cleCalendarUrl"),
+  cleFetch: document.querySelector("#cleFetch"),
+  cleFile: document.querySelector("#cleFile"),
+  clePaste: document.querySelector("#clePaste"),
+  cleStatus: document.querySelector("#cleStatus"),
   suggestTasks: document.querySelector("#suggestTasks"),
   suggestWeight: document.querySelector("#suggestWeight"),
   aiStatus: document.querySelector("#aiStatus"),
@@ -394,7 +400,8 @@ function hasLocalData() {
     (state.goals || []).length ||
       Object.keys(state.entries || {}).length ||
       Object.keys(state.healthByDate || {}).length ||
-      state.goal
+      state.goal ||
+      state.cleCalendarUrl
   );
 }
 
@@ -475,6 +482,189 @@ function getActiveGoalText() {
   return (state.goals || []).map((goal) => `${goal.title}（期限: ${goal.deadline || "未設定"}）`).join("\n");
 }
 
+function setCleStatus(message, isError = false) {
+  if (!els.cleStatus) return;
+  els.cleStatus.textContent = message;
+  els.cleStatus.style.color = isError ? "var(--danger)" : "";
+}
+
+function unfoldIcs(text) {
+  return text.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
+}
+
+function decodeIcsValue(value = "") {
+  return String(value)
+    .replace(/\\n/g, " ")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .replace(/\\\\/g, "\\")
+    .trim();
+}
+
+function parseIcsDate(value = "") {
+  const text = String(value).trim();
+  const match = text.match(/^(\d{4})(\d{2})(\d{2})/);
+  if (!match) return "";
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
+function parseCleIcs(text) {
+  const lines = unfoldIcs(text);
+  const assignments = [];
+  let event = null;
+
+  lines.forEach((line) => {
+    if (line === "BEGIN:VEVENT") {
+      event = {};
+      return;
+    }
+    if (line === "END:VEVENT") {
+      if (event?.title && event?.deadline) assignments.push(event);
+      event = null;
+      return;
+    }
+    if (!event) return;
+
+    const separator = line.indexOf(":");
+    if (separator < 0) return;
+    const key = line.slice(0, separator).split(";")[0].toUpperCase();
+    const value = line.slice(separator + 1);
+    if (key === "SUMMARY") event.title = decodeIcsValue(value);
+    if (key === "DESCRIPTION" && !event.description) event.description = decodeIcsValue(value);
+    if (key === "DUE" || key === "DTEND" || key === "DTSTART") {
+      event.deadline = event.deadline || parseIcsDate(value);
+    }
+  });
+
+  return assignments;
+}
+
+function parseCleCsv(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return [];
+  const headers = rows[0].map((header) => String(header || "").trim().toLowerCase());
+  const findHeader = (...names) => headers.findIndex((header) => names.some((name) => header.includes(name)));
+  const titleIndex = findHeader("title", "name", "summary", "assignment", "課題", "タイトル", "件名");
+  const dueIndex = findHeader("due", "deadline", "date", "期限", "締切", "期日", "日付");
+  if (titleIndex < 0 || dueIndex < 0) return [];
+
+  return rows
+    .slice(1)
+    .map((row) => ({
+      title: String(row[titleIndex] || "").trim(),
+      deadline: normalizeDateString(row[dueIndex]),
+    }))
+    .filter((item) => item.title && item.deadline);
+}
+
+function normalizeDateString(value) {
+  const text = String(value || "").trim();
+  const iso = text.match(/(\d{4})[-/年.](\d{1,2})[-/月.](\d{1,2})/);
+  if (iso) return `${iso[1]}-${String(iso[2]).padStart(2, "0")}-${String(iso[3]).padStart(2, "0")}`;
+  const md = text.match(/(\d{1,2})[-/月.](\d{1,2})/);
+  if (md) return `${todayString.slice(0, 4)}-${String(md[1]).padStart(2, "0")}-${String(md[2]).padStart(2, "0")}`;
+  return "";
+}
+
+function parseCleText(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const deadline = normalizeDateString(line);
+      const title = line
+        .replace(/\d{4}[-/年.]\d{1,2}[-/月.]\d{1,2}日?/g, "")
+        .replace(/\d{1,2}[-/月.]\d{1,2}日?/g, "")
+        .replace(/期限|締切|期日|Due:?/gi, "")
+        .trim();
+      return { title: title || line, deadline };
+    })
+    .filter((item) => item.title && item.deadline);
+}
+
+function parseCleAssignments(text, fileName = "") {
+  const name = String(fileName).toLowerCase();
+  const trimmed = text.trim();
+  if (name.endsWith(".ics") || trimmed.includes("BEGIN:VCALENDAR")) return parseCleIcs(text);
+  if (name.endsWith(".csv") || trimmed.includes(",")) {
+    const csvItems = parseCleCsv(text);
+    if (csvItems.length) return csvItems;
+  }
+  if (name.endsWith(".json") || trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    const parsed = JSON.parse(trimmed);
+    const rows = Array.isArray(parsed) ? parsed : Array.isArray(parsed.assignments) ? parsed.assignments : [parsed];
+    return rows
+      .map((item) => ({
+        title: String(item.title || item.name || item.summary || item["課題"] || "").trim(),
+        deadline: normalizeDateString(item.deadline || item.due || item.date || item["期限"] || item["締切"] || ""),
+      }))
+      .filter((item) => item.title && item.deadline);
+  }
+  return parseCleText(text);
+}
+
+function importCleAssignments(assignments) {
+  const existing = new Set((state.goals || []).map((goal) => `${goal.title}::${goal.deadline}`));
+  let added = 0;
+  assignments.forEach((assignment) => {
+    const title = String(assignment.title || "").trim();
+    const deadline = normalizeDateString(assignment.deadline);
+    if (!title || !deadline) return;
+    const key = `${title}::${deadline}`;
+    if (existing.has(key)) return;
+    existing.add(key);
+    state.goals.push({
+      id: crypto.randomUUID(),
+      title,
+      deadline,
+      source: "cle",
+      createdAt: new Date().toISOString(),
+    });
+    added += 1;
+  });
+  render();
+  return added;
+}
+
+async function fetchCleCalendarText(calendarUrl) {
+  const url = String(calendarUrl || "").trim();
+  if (!/^https?:\/\//i.test(url) && !/^webcal:\/\//i.test(url)) {
+    throw new Error("CLEのカレンダー共有リンクを入力してください。");
+  }
+  const normalizedUrl = url.replace(/^webcal:/i, "https:");
+  const proxyUrl = getAiProxyBaseUrl();
+  if (proxyUrl) {
+    const session = getSupabaseSession();
+    const response = await fetch(`${proxyUrl}/api/fetch-ics`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ url: normalizedUrl }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "カレンダーを取得できませんでした。");
+    return data.text || "";
+  }
+
+  const response = await fetch(normalizedUrl);
+  if (!response.ok) throw new Error("カレンダーを取得できませんでした。Cloudflare Worker URLの設定が必要な場合があります。");
+  return response.text();
+}
+
+async function refreshCleCalendar() {
+  const url = els.cleCalendarUrl?.value.trim() || state.cleCalendarUrl || "";
+  setCleStatus("CLEカレンダーを取得中...");
+  const text = await fetchCleCalendarText(url);
+  const assignments = parseCleAssignments(text, "cle-calendar.ics");
+  const added = importCleAssignments(assignments);
+  state.cleCalendarUrl = url;
+  saveState();
+  setCleStatus(`${assignments.length}件を確認し、${added}件を追加しました。`);
+}
+
 function getHealthForDate(date = els.entryDate.value) {
   const entry = getEntry(date);
   return entry.health || state.healthByDate?.[date] || null;
@@ -484,6 +674,9 @@ function render() {
   const entry = getEntry();
   pruneGoals();
   els.goalStatus.textContent = state.goals.length ? `${state.goals.length}件` : "未設定";
+  if (els.cleCalendarUrl && document.activeElement !== els.cleCalendarUrl) {
+    els.cleCalendarUrl.value = state.cleCalendarUrl || "";
+  }
   els.entryPlace.value = entry.place || "";
   els.entryContext.value = entry.context || "";
   els.reflection.value = entry.reflection || "";
@@ -1405,6 +1598,51 @@ els.goalForm.addEventListener("submit", (event) => {
   els.goalInput.value = "";
   els.goalDeadline.value = todayString;
   render();
+});
+
+els.cleCalendarUrl?.addEventListener("change", () => {
+  state.cleCalendarUrl = els.cleCalendarUrl.value.trim();
+  saveState();
+});
+
+els.cleFetch?.addEventListener("click", async () => {
+  els.cleFetch.disabled = true;
+  try {
+    await refreshCleCalendar();
+  } catch (error) {
+    setCleStatus(error.message || "CLEカレンダーを更新できませんでした。", true);
+  } finally {
+    els.cleFetch.disabled = false;
+  }
+});
+
+els.cleFile?.addEventListener("change", async () => {
+  const file = els.cleFile.files && els.cleFile.files[0];
+  if (!file) return;
+  setCleStatus("読み込み中...");
+  try {
+    const text = await file.text();
+    const assignments = parseCleAssignments(text, file.name);
+    const added = importCleAssignments(assignments);
+    setCleStatus(`${added}件の課題を追加しました。`);
+  } catch (error) {
+    setCleStatus(error.message || "CLE課題を読み込めませんでした。", true);
+  } finally {
+    els.cleFile.value = "";
+  }
+});
+
+els.clePaste?.addEventListener("click", async () => {
+  setCleStatus("クリップボードを確認中...");
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text.trim()) throw new Error("クリップボードが空です。CLEの課題一覧をコピーしてから押してください。");
+    const assignments = parseCleAssignments(text, "cle-copy.txt");
+    const added = importCleAssignments(assignments);
+    setCleStatus(`${added}件の課題を追加しました。`);
+  } catch (error) {
+    setCleStatus(error.message || "貼り付けから読み込めませんでした。", true);
+  }
 });
 
 els.suggestTasks.addEventListener("click", async () => {
