@@ -719,24 +719,28 @@ async function fetchCleCalendarText(calendarUrl) {
   }
   const normalizedUrl = url.replace(/^webcal:/i, "https:");
   const proxyUrl = getAiProxyBaseUrl();
+  if (!proxyUrl) {
+    throw new Error("CLEカレンダー取得にはCloudflare Worker URLの設定が必要です。cloud-config.jsのGTJ_AI_PROXY_URLを設定してください。");
+  }
   if (proxyUrl) {
     const session = getSupabaseSession();
-    const response = await fetch(`${proxyUrl}/api/fetch-ics`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-      body: JSON.stringify({ url: normalizedUrl }),
-    });
+    let response;
+    try {
+      response = await fetch(`${proxyUrl}/api/fetch-ics`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ url: normalizedUrl }),
+      });
+    } catch {
+      throw new Error("Cloudflare Workerに接続できませんでした。Worker URLとデプロイ状態を確認してください。");
+    }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "カレンダーを取得できませんでした。");
     return data.text || "";
   }
-
-  const response = await fetch(normalizedUrl);
-  if (!response.ok) throw new Error("カレンダーを取得できませんでした。Cloudflare Worker URLの設定が必要な場合があります。");
-  return response.text();
 }
 
 async function refreshCleCalendar() {
