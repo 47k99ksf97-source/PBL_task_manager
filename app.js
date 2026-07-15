@@ -514,14 +514,30 @@ function parseIcsDate(value = "") {
 function extractCourseFromText(text = "") {
   const value = String(text || "").replace(/\s+/g, " ").trim();
   const patterns = [
-    /(?:Course|Class|授業|科目|講義|コース)\s*[:：]\s*([^,;|／/]+)/i,
+    /(?:Course\s*Name|Class\s*Name|Subject|Calendar|Course|Class|授業名|科目名|授業|科目|講義|コース)\s*[:：]\s*([^,;|／/]+)/i,
+    /\[([^\]]{2,80})\]/,
+    /【([^】]{2,80})】/,
     /(?:^|\s)([^,;|／/]+?)\s*(?:課題|Assignment|レポート|小テスト)/i,
   ];
   for (const pattern of patterns) {
     const match = value.match(pattern);
-    if (match?.[1]) return match[1].trim();
+    const course = cleanCourseName(match?.[1]);
+    if (course) return course;
   }
   return "";
+}
+
+function cleanCourseName(value = "") {
+  const text = String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s:：／/・\-–—\[\]【】]+|[\s:：／/・\-–—\[\]【】]+$/g, "")
+    .trim();
+  if (text.length < 2 || text.length > 80) return "";
+  if (/https?:\/\//i.test(text)) return "";
+  if (/^\d{4}[-/年.]\d{1,2}/.test(text)) return "";
+  if (/^(Assignment|Assignments|Due|Calendar|Event|課題|期限|締切)$/i.test(text)) return "";
+  return text;
 }
 
 function splitCourseAndTitle(title = "") {
@@ -560,9 +576,14 @@ function parseCleIcs(text) {
   const assignments = [];
   let event = null;
 
+  const addCourseCandidate = (value) => {
+    const course = cleanCourseName(value);
+    if (course && !event.courseCandidates.includes(course)) event.courseCandidates.push(course);
+  };
+
   lines.forEach((line) => {
     if (line === "BEGIN:VEVENT") {
-      event = {};
+      event = { courseCandidates: [] };
       return;
     }
     if (line === "END:VEVENT") {
@@ -574,12 +595,16 @@ function parseCleIcs(text) {
 
     const separator = line.indexOf(":");
     if (separator < 0) return;
-    const key = line.slice(0, separator).split(";")[0].toUpperCase();
+    const name = line.slice(0, separator);
+    const key = name.split(";")[0].toUpperCase();
     const value = line.slice(separator + 1);
-    if (key === "SUMMARY") event.title = decodeIcsValue(value);
-    if (key === "DESCRIPTION" && !event.description) event.description = decodeIcsValue(value);
-    if (key === "LOCATION" && !event.location) event.location = decodeIcsValue(value);
-    if (key === "CATEGORIES" && !event.course) event.course = decodeIcsValue(value);
+    const decoded = decodeIcsValue(value);
+    if (key === "SUMMARY") event.title = decoded;
+    if (key === "DESCRIPTION" && !event.description) event.description = decoded;
+    if (key === "LOCATION" && !event.location) event.location = decoded;
+    if (key === "CATEGORIES") addCourseCandidate(decoded);
+    if (/COURSE|CLASS|SUBJECT|SECTION/.test(key)) addCourseCandidate(decoded);
+    if (/CALENDAR/.test(key) && key !== "X-WR-CALNAME") addCourseCandidate(decoded);
     if (key === "DUE" || key === "DTEND" || key === "DTSTART") {
       event.deadline = event.deadline || parseIcsDate(value);
     }
@@ -588,11 +613,14 @@ function parseCleIcs(text) {
   assignments.forEach((assignment) => {
     const split = splitCourseAndTitle(assignment.title);
     const courseFromTitle = split.course || extractCourseFromText(assignment.title);
+    const courseCandidates = [
+      ...(assignment.courseCandidates || []),
+      extractCourseFromText(assignment.description),
+      extractCourseFromText(assignment.location),
+      courseFromTitle,
+    ];
     assignment.course =
-      assignment.course ||
-      extractCourseFromText(assignment.description) ||
-      extractCourseFromText(assignment.location) ||
-      courseFromTitle;
+      courseCandidates.find((course) => course && course !== assignment.title && course !== split.title) || "";
     assignment.title = split.course ? split.title : removeCoursePrefix(assignment.title, courseFromTitle);
   });
 
@@ -690,11 +718,20 @@ function parseCleAssignments(text, fileName = "") {
 function importCleAssignments(assignments) {
   const existing = new Set((state.goals || []).map((goal) => `${goal.course || ""}::${goal.title}::${goal.deadline}`));
   let added = 0;
+  let updated = 0;
   assignments.forEach((assignment) => {
     const title = String(assignment.title || "").trim();
     const course = String(assignment.course || "").trim();
     const deadline = normalizeDateString(assignment.deadline);
     if (!title || !deadline) return;
+    const sameGoal = (state.goals || []).find((goal) => goal.source === "cle" && goal.title === title && goal.deadline === deadline);
+    if (sameGoal) {
+      if (course && !sameGoal.course) {
+        sameGoal.course = course;
+        updated += 1;
+      }
+      return;
+    }
     const key = `${course}::${title}::${deadline}`;
     if (existing.has(key)) return;
     existing.add(key);
@@ -709,7 +746,7 @@ function importCleAssignments(assignments) {
     added += 1;
   });
   render();
-  return added;
+  return { added, updated };
 }
 
 async function fetchCleCalendarText(calendarUrl) {
@@ -748,10 +785,13 @@ async function refreshCleCalendar() {
   setCleStatus("CLEカレンダーを取得中...");
   const text = await fetchCleCalendarText(url);
   const assignments = parseCleAssignments(text, "cle-calendar.ics");
-  const added = importCleAssignments(assignments);
+  const result = importCleAssignments(assignments);
+  const withCourse = assignments.filter((assignment) => assignment.course).length;
   state.cleCalendarUrl = url;
   saveState();
-  setCleStatus(`${assignments.length}件を確認し、${added}件を追加しました。`);
+  setCleStatus(
+    `${assignments.length}件を確認し、${result.added}件を追加、${result.updated}件の科目名を更新しました。科目名あり: ${withCourse}件`
+  );
 }
 
 function getHealthForDate(date = els.entryDate.value) {
@@ -1713,8 +1753,9 @@ els.cleFile?.addEventListener("change", async () => {
   try {
     const text = await file.text();
     const assignments = parseCleAssignments(text, file.name);
-    const added = importCleAssignments(assignments);
-    setCleStatus(`${added}件の課題を追加しました。`);
+    const result = importCleAssignments(assignments);
+    const withCourse = assignments.filter((assignment) => assignment.course).length;
+    setCleStatus(`${result.added}件を追加、${result.updated}件の科目名を更新しました。科目名あり: ${withCourse}件`);
   } catch (error) {
     setCleStatus(error.message || "CLE課題を読み込めませんでした。", true);
   } finally {
@@ -1728,8 +1769,9 @@ els.clePaste?.addEventListener("click", async () => {
     const text = await navigator.clipboard.readText();
     if (!text.trim()) throw new Error("クリップボードが空です。CLEの課題一覧をコピーしてから押してください。");
     const assignments = parseCleAssignments(text, "cle-copy.txt");
-    const added = importCleAssignments(assignments);
-    setCleStatus(`${added}件の課題を追加しました。`);
+    const result = importCleAssignments(assignments);
+    const withCourse = assignments.filter((assignment) => assignment.course).length;
+    setCleStatus(`${result.added}件を追加、${result.updated}件の科目名を更新しました。科目名あり: ${withCourse}件`);
   } catch (error) {
     setCleStatus(error.message || "貼り付けから読み込めませんでした。", true);
   }
