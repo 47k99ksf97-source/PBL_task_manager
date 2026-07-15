@@ -474,6 +474,7 @@ function getEntry(date = els.entryDate.value) {
 }
 
 function pruneGoals() {
+  (state.goals || []).forEach(normalizeCleGoalCourse);
   state.goals = (state.goals || []).filter((goal) => !goal.deadline || goal.deadline >= todayString);
 }
 
@@ -542,6 +543,16 @@ function removeCoursePrefix(title = "", course = "") {
   const courseText = String(course || "").trim();
   if (!courseText || !text.startsWith(courseText)) return text;
   return text.slice(courseText.length).replace(/^[\s:：／/・\-–—]+/, "").trim() || text;
+}
+
+function normalizeCleGoalCourse(goal) {
+  if (!goal || goal.source !== "cle" || goal.course) return false;
+  const split = splitCourseAndTitle(goal.title);
+  const course = split.course || extractCourseFromText(goal.title);
+  if (!course) return false;
+  goal.course = course;
+  goal.title = split.course ? split.title : removeCoursePrefix(goal.title, course);
+  return true;
 }
 
 function parseCleIcs(text) {
