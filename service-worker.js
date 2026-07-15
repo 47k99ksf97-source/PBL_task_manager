@@ -1,4 +1,4 @@
-const cacheName = "goal-task-journal-v20-cle-course-refresh";
+const cacheName = "goal-task-journal-v21-visible-refresh";
 const appFiles = [
   "./",
   "./index.html",
@@ -10,6 +10,7 @@ const appFiles = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(cacheName).then((cache) => cache.addAll(appFiles)));
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
@@ -17,6 +18,7 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== cacheName).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim())
   );
 });
 

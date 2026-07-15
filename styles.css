@@ -94,6 +94,13 @@ button {
   text-transform: uppercase;
 }
 
+.app-version {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
 h1,
 h2 {
   margin: 0;
