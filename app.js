@@ -81,6 +81,7 @@ const els = {
   addReflection: document.querySelector("#addReflection"),
   reflectionStatus: document.querySelector("#reflectionStatus"),
   reflectionList: document.querySelector("#reflectionList"),
+  aiDiaryList: document.querySelector("#aiDiaryList"),
   saveEntry: document.querySelector("#saveEntry"),
   clearAll: document.querySelector("#clearAll"),
   historyList: document.querySelector("#historyList"),
@@ -474,6 +475,7 @@ function getEntry(date = els.entryDate.value) {
   const entry = state.entries[date];
   entry.tasks = Array.isArray(entry.tasks) ? entry.tasks : [];
   entry.reflectionLogs = normalizeReflectionLogs(entry);
+  entry.aiDiaryLogs = normalizeAiDiaryLogs(entry);
   return entry;
 }
 
@@ -484,6 +486,8 @@ function normalizeReflectionLogs(entry) {
           id: item.id || crypto.randomUUID(),
           text: String(item.text || "").trim(),
           createdAt: item.createdAt || item.time || item.savedAt || entry.savedAt || "",
+          place: String(item.place || "").trim(),
+          context: String(item.context || "").trim(),
         }))
         .filter((item) => item.text)
     : [];
@@ -494,9 +498,23 @@ function normalizeReflectionLogs(entry) {
       id: crypto.randomUUID(),
       text: legacyReflection,
       createdAt: entry.savedAt || "",
+      place: entry.place || "",
+      context: entry.context || "",
     });
   }
   return logs;
+}
+
+function normalizeAiDiaryLogs(entry) {
+  return Array.isArray(entry.aiDiaryLogs)
+    ? entry.aiDiaryLogs
+        .map((item) => ({
+          id: item.id || crypto.randomUUID(),
+          text: String(item.text || item.diary || "").trim(),
+          createdAt: item.createdAt || item.time || item.savedAt || entry.savedAt || "",
+        }))
+        .filter((item) => item.text)
+    : [];
 }
 
 function getReflectionText(entry) {
@@ -522,10 +540,12 @@ function addReflectionLog() {
     id: crypto.randomUUID(),
     text,
     createdAt: new Date().toISOString(),
+    place: els.entryPlace.value.trim(),
+    context: els.entryContext.value.trim(),
   });
   entry.reflection = getReflectionText(entry);
   entry.savedAt = entry.savedAt || new Date().toISOString();
-  if (document.activeElement !== els.reflection) els.reflection.value = "";
+  els.reflection.value = "";
   els.reflectionStatus.textContent = "追加しました。";
   render();
 }
@@ -872,6 +892,7 @@ function render() {
   renderGradeButtons();
   renderGoals();
   renderReflectionLogs(entry);
+  renderAiDiaryLogs(entry);
   renderTasks(entry.tasks);
   renderSummary(entry.tasks);
   renderHealth(getHealthForDate());
@@ -916,11 +937,40 @@ function renderReflectionLogs(entry) {
     .forEach((log) => {
       const item = document.createElement("article");
       item.className = "reflection-log";
+      const meta = [
+        log.place ? `場所: ${log.place}` : "",
+        log.context ? `状況: ${log.context}` : "",
+      ].filter(Boolean);
+      item.innerHTML = `
+        <time>${escapeHtml(formatLogTime(log.createdAt))}</time>
+        <div>
+          ${meta.length ? `<div class="reflection-meta">${meta.map((value) => `<span>${escapeHtml(value)}</span>`).join("")}</div>` : ""}
+          <p>${escapeHtml(log.text)}</p>
+        </div>
+      `;
+      els.reflectionList.append(item);
+    });
+}
+
+function renderAiDiaryLogs(entry) {
+  if (!els.aiDiaryList) return;
+  const logs = normalizeAiDiaryLogs(entry);
+  els.aiDiaryList.innerHTML = "";
+  if (!logs.length) {
+    els.aiDiaryList.innerHTML = '<p class="empty compact">まだAI日記はありません。</p>';
+    return;
+  }
+  logs
+    .slice()
+    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    .forEach((log) => {
+      const item = document.createElement("article");
+      item.className = "reflection-log ai-diary-log";
       item.innerHTML = `
         <time>${escapeHtml(formatLogTime(log.createdAt))}</time>
         <p>${escapeHtml(log.text)}</p>
       `;
-      els.reflectionList.append(item);
+      els.aiDiaryList.append(item);
     });
 }
 
@@ -1225,6 +1275,7 @@ function renderHistory() {
         entry.tasks?.length ||
         entry.reflection ||
         entry.reflectionLogs?.length ||
+        entry.aiDiaryLogs?.length ||
         entry.place ||
         entry.context ||
         entry.health ||
@@ -1245,6 +1296,7 @@ function renderHistory() {
     const done = tasks.filter((task) => task.done).length;
     const health = entry.health || state.healthByDate?.[date] || null;
     const reflectionLogs = normalizeReflectionLogs(entry);
+    const aiDiaryLogs = normalizeAiDiaryLogs(entry);
     const meta = [
       entry.place ? `場所: ${entry.place}` : "",
       entry.context ? `状況: ${entry.context}` : "",
@@ -1272,6 +1324,31 @@ function renderHistory() {
               .map(
                 (log) => `
                   <div class="history-reflection">
+                    <time>${escapeHtml(formatLogTime(log.createdAt))}</time>
+                    ${
+                      log.place || log.context
+                        ? `<div class="reflection-meta">${[
+                            log.place ? `場所: ${log.place}` : "",
+                            log.context ? `状況: ${log.context}` : "",
+                          ]
+                            .filter(Boolean)
+                            .map((value) => `<span>${escapeHtml(value)}</span>`)
+                            .join("")}</div>`
+                        : ""
+                    }
+                    <p>${escapeHtml(log.text)}</p>
+                  </div>
+                `
+              )
+              .join("")}</div>`
+          : ""
+      }
+      ${
+        aiDiaryLogs.length
+          ? `<div class="history-ai-diaries"><strong>AI日記</strong>${aiDiaryLogs
+              .map(
+                (log) => `
+                  <div class="history-reflection ai-diary-log">
                     <time>${escapeHtml(formatLogTime(log.createdAt))}</time>
                     <p>${escapeHtml(log.text)}</p>
                   </div>
@@ -1429,6 +1506,12 @@ function getRecentEntries() {
       context: entry.context || "",
       reflection: getReflectionText(entry),
       reflectionLogs: normalizeReflectionLogs(entry).map((log) => ({
+        text: log.text,
+        createdAt: log.createdAt,
+        place: log.place || "",
+        context: log.context || "",
+      })),
+      aiDiaryLogs: normalizeAiDiaryLogs(entry).map((log) => ({
         text: log.text,
         createdAt: log.createdAt,
       })),
@@ -1982,12 +2065,12 @@ els.generateDiary.addEventListener("click", async () => {
     const result = await postAi("/api/generate-diary", getDiaryPayload());
     if (!result.diary) throw new Error("AI日記の形式を読み取れませんでした。");
     const entry = getEntry();
-    entry.reflectionLogs.push({
+    entry.aiDiaryLogs.push({
       id: crypto.randomUUID(),
       text: result.diary,
       createdAt: new Date().toISOString(),
     });
-    entry.reflection = getReflectionText(entry);
+    entry.savedAt = entry.savedAt || new Date().toISOString();
     els.reflection.value = "";
     saveState();
     render();
@@ -2121,6 +2204,8 @@ els.saveEntry.addEventListener("click", () => {
       id: crypto.randomUUID(),
       text: draft,
       createdAt: new Date().toISOString(),
+      place: els.entryPlace.value.trim(),
+      context: els.entryContext.value.trim(),
     });
     els.reflection.value = "";
   }
