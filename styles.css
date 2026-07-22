@@ -467,6 +467,52 @@ textarea:focus {
   margin-bottom: 12px;
 }
 
+.reflection-box {
+  display: grid;
+  gap: 10px;
+}
+
+.reflection-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.reflection-list,
+.history-reflections {
+  display: grid;
+  gap: 8px;
+}
+
+.reflection-log,
+.history-reflection {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.reflection-log time,
+.history-reflection time {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.reflection-log p,
+.history-reflection p {
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.empty.compact {
+  margin: 0;
+}
+
 .panel-note {
   margin: 4px 0 0;
   color: var(--muted);

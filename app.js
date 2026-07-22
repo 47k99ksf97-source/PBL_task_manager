@@ -78,6 +78,9 @@ const els = {
   entryPlace: document.querySelector("#entryPlace"),
   entryContext: document.querySelector("#entryContext"),
   reflection: document.querySelector("#reflection"),
+  addReflection: document.querySelector("#addReflection"),
+  reflectionStatus: document.querySelector("#reflectionStatus"),
+  reflectionList: document.querySelector("#reflectionList"),
   saveEntry: document.querySelector("#saveEntry"),
   clearAll: document.querySelector("#clearAll"),
   historyList: document.querySelector("#historyList"),
@@ -470,7 +473,61 @@ function getEntry(date = els.entryDate.value) {
   }
   const entry = state.entries[date];
   entry.tasks = Array.isArray(entry.tasks) ? entry.tasks : [];
+  entry.reflectionLogs = normalizeReflectionLogs(entry);
   return entry;
+}
+
+function normalizeReflectionLogs(entry) {
+  const logs = Array.isArray(entry.reflectionLogs)
+    ? entry.reflectionLogs
+        .map((item) => ({
+          id: item.id || crypto.randomUUID(),
+          text: String(item.text || "").trim(),
+          createdAt: item.createdAt || item.time || item.savedAt || entry.savedAt || "",
+        }))
+        .filter((item) => item.text)
+    : [];
+
+  const legacyReflection = String(entry.reflection || "").trim();
+  if (legacyReflection && !logs.length) {
+    logs.push({
+      id: crypto.randomUUID(),
+      text: legacyReflection,
+      createdAt: entry.savedAt || "",
+    });
+  }
+  return logs;
+}
+
+function getReflectionText(entry) {
+  return normalizeReflectionLogs(entry)
+    .map((item) => item.text)
+    .join("\n");
+}
+
+function formatLogTime(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "時刻未記録";
+  return date.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+}
+
+function addReflectionLog() {
+  const text = els.reflection.value.trim();
+  if (!text) {
+    els.reflectionStatus.textContent = "入力してから追加してください。";
+    return;
+  }
+  const entry = getEntry();
+  entry.reflectionLogs.push({
+    id: crypto.randomUUID(),
+    text,
+    createdAt: new Date().toISOString(),
+  });
+  entry.reflection = getReflectionText(entry);
+  entry.savedAt = entry.savedAt || new Date().toISOString();
+  if (document.activeElement !== els.reflection) els.reflection.value = "";
+  els.reflectionStatus.textContent = "追加しました。";
+  render();
 }
 
 function pruneGoals() {
@@ -808,12 +865,13 @@ function render() {
   }
   els.entryPlace.value = entry.place || "";
   els.entryContext.value = entry.context || "";
-  els.reflection.value = entry.reflection || "";
+  els.reflection.value = "";
   renderAiGradeResult(entry);
   currentGrade = entry.grade || suggestGrade(entry.tasks);
 
   renderGradeButtons();
   renderGoals();
+  renderReflectionLogs(entry);
   renderTasks(entry.tasks);
   renderSummary(entry.tasks);
   renderHealth(getHealthForDate());
@@ -842,6 +900,28 @@ function renderGoals() {
     item.querySelector(".icon-button").addEventListener("click", () => removeGoal(goal.id));
     els.goalList.append(item);
   });
+}
+
+function renderReflectionLogs(entry) {
+  if (!els.reflectionList) return;
+  const logs = normalizeReflectionLogs(entry);
+  els.reflectionList.innerHTML = "";
+  if (!logs.length) {
+    els.reflectionList.innerHTML = '<p class="empty compact">まだコメントはありません。</p>';
+    return;
+  }
+  logs
+    .slice()
+    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    .forEach((log) => {
+      const item = document.createElement("article");
+      item.className = "reflection-log";
+      item.innerHTML = `
+        <time>${escapeHtml(formatLogTime(log.createdAt))}</time>
+        <p>${escapeHtml(log.text)}</p>
+      `;
+      els.reflectionList.append(item);
+    });
 }
 
 function removeGoal(id) {
@@ -1144,6 +1224,7 @@ function renderHistory() {
         entry.savedAt ||
         entry.tasks?.length ||
         entry.reflection ||
+        entry.reflectionLogs?.length ||
         entry.place ||
         entry.context ||
         entry.health ||
@@ -1163,6 +1244,7 @@ function renderHistory() {
     const tasks = entry.tasks || [];
     const done = tasks.filter((task) => task.done).length;
     const health = entry.health || state.healthByDate?.[date] || null;
+    const reflectionLogs = normalizeReflectionLogs(entry);
     const meta = [
       entry.place ? `場所: ${entry.place}` : "",
       entry.context ? `状況: ${entry.context}` : "",
@@ -1184,7 +1266,20 @@ function renderHistory() {
           ? `<div class="history-meta">${meta.map((item) => `<span class="meta-chip">${escapeHtml(item)}</span>`).join("")}</div>`
           : ""
       }
-      ${entry.reflection ? `<p>${escapeHtml(entry.reflection)}</p>` : ""}
+      ${
+        reflectionLogs.length
+          ? `<div class="history-reflections">${reflectionLogs
+              .map(
+                (log) => `
+                  <div class="history-reflection">
+                    <time>${escapeHtml(formatLogTime(log.createdAt))}</time>
+                    <p>${escapeHtml(log.text)}</p>
+                  </div>
+                `
+              )
+              .join("")}</div>`
+          : ""
+      }
     `;
     els.historyList.append(card);
   });
@@ -1332,7 +1427,11 @@ function getRecentEntries() {
       grade: entry.grade || "F",
       place: entry.place || "",
       context: entry.context || "",
-      reflection: entry.reflection || "",
+      reflection: getReflectionText(entry),
+      reflectionLogs: normalizeReflectionLogs(entry).map((log) => ({
+        text: log.text,
+        createdAt: log.createdAt,
+      })),
       health: entry.health || state.healthByDate?.[date] || null,
       screenTime: entry.screenTime || null,
       tasks: (entry.tasks || []).map((task) => ({
@@ -1351,7 +1450,7 @@ function getDiaryPayload() {
     date: els.entryDate.value,
     place: els.entryPlace.value || entry.place || "",
     context: els.entryContext.value || entry.context || "",
-    currentReflection: els.reflection.value || entry.reflection || "",
+    currentReflection: els.reflection.value || getReflectionText(entry),
     grade: currentGrade,
     suggestedGrade: suggestGrade(entry.tasks),
     completionRate: els.completionRate.textContent,
@@ -1834,7 +1933,7 @@ els.suggestWeight.addEventListener("click", async () => {
 
 els.evaluateDay.addEventListener("click", async () => {
   const entry = getEntry();
-  if (!entry.tasks.length && !entry.reflection.trim()) {
+  if (!entry.tasks.length && !getReflectionText(entry).trim() && !els.reflection.value.trim()) {
     setAiGradeStatus("タスクか振り返りを入力してから評価してください。", true);
     return;
   }
@@ -1847,7 +1946,7 @@ els.evaluateDay.addEventListener("click", async () => {
       date: els.entryDate.value,
       place: entry.place || "",
       context: entry.context || "",
-      reflection: entry.reflection || "",
+      reflection: els.reflection.value || getReflectionText(entry),
       health: getHealthForDate() || null,
       screenTime: entry.screenTime || null,
       ruleSuggestedGrade: suggestGrade(entry.tasks),
@@ -1872,7 +1971,7 @@ els.evaluateDay.addEventListener("click", async () => {
 
 els.generateDiary.addEventListener("click", async () => {
   const entry = getEntry();
-  if (!entry.tasks.length && !els.reflection.value.trim() && !els.entryContext.value.trim()) {
+  if (!entry.tasks.length && !els.reflection.value.trim() && !getReflectionText(entry).trim() && !els.entryContext.value.trim()) {
     setAiGradeStatus("日記生成には、タスク・状況メモ・一言メモのどれかを入力してください。", true);
     return;
   }
@@ -1883,8 +1982,13 @@ els.generateDiary.addEventListener("click", async () => {
     const result = await postAi("/api/generate-diary", getDiaryPayload());
     if (!result.diary) throw new Error("AI日記の形式を読み取れませんでした。");
     const entry = getEntry();
-    entry.reflection = result.diary;
-    els.reflection.value = result.diary;
+    entry.reflectionLogs.push({
+      id: crypto.randomUUID(),
+      text: result.diary,
+      createdAt: new Date().toISOString(),
+    });
+    entry.reflection = getReflectionText(entry);
+    els.reflection.value = "";
     saveState();
     render();
     setAiGradeStatus("日記を生成しました。");
@@ -2003,10 +2107,7 @@ els.entryContext.addEventListener("input", () => {
   saveState();
 });
 
-els.reflection.addEventListener("input", () => {
-  getEntry().reflection = els.reflection.value;
-  saveState();
-});
+els.addReflection?.addEventListener("click", addReflectionLog);
 
 els.saveEntry.addEventListener("click", () => {
   const entry = getEntry();
@@ -2014,7 +2115,16 @@ els.saveEntry.addEventListener("click", () => {
   entry.grade = currentGrade;
   entry.place = els.entryPlace.value;
   entry.context = els.entryContext.value;
-  entry.reflection = els.reflection.value;
+  const draft = els.reflection.value.trim();
+  if (draft) {
+    entry.reflectionLogs.push({
+      id: crypto.randomUUID(),
+      text: draft,
+      createdAt: new Date().toISOString(),
+    });
+    els.reflection.value = "";
+  }
+  entry.reflection = getReflectionText(entry);
   entry.savedAt = new Date().toISOString();
   render();
 });

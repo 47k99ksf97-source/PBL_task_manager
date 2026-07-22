@@ -8,10 +8,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#0f766e">
     <title>Goal Task Journal</title>
-    <link rel="manifest" href="manifest.webmanifest?v=20260716-3">
+    <link rel="manifest" href="manifest.webmanifest?v=20260723-1">
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="icon.svg">
-    <link rel="stylesheet" href="styles.css?v=20260716-3">
+    <link rel="stylesheet" href="styles.css?v=20260723-1">
   </head>
   <body>
     <main class="app">
@@ -19,7 +19,7 @@
         <div>
           <p class="eyebrow">Goal Task Journal</p>
           <h1>目標と今日のタスク</h1>
-          <p class="app-version">更新版 v2026-07-16-3</p>
+          <p class="app-version">更新版 v2026-07-23-1</p>
         </div>
         <div class="date-box">
           <label for="entryDate">日付</label>
@@ -212,7 +212,15 @@
               <input id="entryContext" type="text" placeholder="例: 眠め、集中できた、移動中">
             </div>
           </div>
-          <textarea id="reflection" rows="3" placeholder="今日の振り返り"></textarea>
+          <div class="reflection-box">
+            <label for="reflection">コメント・振り返り</label>
+            <textarea id="reflection" rows="3" placeholder="今の気づき、反省、次にやること"></textarea>
+            <div class="reflection-actions">
+              <button id="addReflection" class="primary" type="button">追加</button>
+              <span id="reflectionStatus" class="ai-status" role="status"></span>
+            </div>
+            <div id="reflectionList" class="reflection-list"></div>
+          </div>
         </section>
       </div>
 
@@ -265,7 +273,7 @@
       </li>
     </template>
 
-    <script src="cloud-config.js?v=20260716-3"></script>
-    <script src="app.js?v=20260716-3"></script>
+    <script src="cloud-config.js?v=20260723-1"></script>
+    <script src="app.js?v=20260723-1"></script>
   </body>
 </html>
